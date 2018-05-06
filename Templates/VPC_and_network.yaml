@@ -1,0 +1,302 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "VPC, EC2 & network stack"
+# No required:
+Metadata: {}
+Conditions: {}
+Outputs: {}
+# Begining
+Parameters:
+  IPv4VPCCidrBlock:
+    Description: VPC CIDR Block (eg 10.0 and 10.0.0.0/16 will be created)
+    Type: String
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})"
+# Parameters for AutoScaling
+  # AMI:
+  #   Type: AWS::EC2::Image::Id
+  #   Description: ID of Amazon Machine Image 
+# Paramenters for EC2 instances
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Amazon EC2 Key Pair
+    # Default: "ibanmarco"
+# Parameters for RDS instances
+  DatabaseName:
+    Type: String
+    Default: mydatabase
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*" # Only alphanumeric characters, first character should be a letter
+  DatabaseUser:
+    Type: String
+    MinLength: 1
+    MaxLength: 16
+    Default: mydbusername
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*" # Only alphanumeric characters, first character should be a letter
+  DatabasePassword:
+    Type: String
+    MinLength: 8
+    MaxLength: 41
+    Default: dbp4s5w0rd
+    NoEcho: true
+    AllowedPattern: "[a-zA-Z0-9]*" # Only alphanumeric characters
+# Define the RDS/EC2 instance size:
+  InstanceSize:
+    Type: String
+    AllowedValues:
+      - SMALL
+      - MEDIUM
+      - LARGE
+    Description: Select the RDS/EC2 instance size
+    Default: SMALL
+Mappings:
+  RegionMap:    # AMI for each region, complete it based on your requirements
+    # us-east-1:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # us-east-2:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # us-west-1:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # us-west-2:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # ca-central-1:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    eu-west-1:  # Ireland
+      "AMIEC2" : "ami-9cbe9be5"
+    # eu-central-1:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    eu-west-2:  # London
+      "AMIEC2" : "ami-c12dcda6" 
+    # ap-southeast-1:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # ap-southeast-2:
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # ap-northeast-2: # Seoul
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # ap-northeast-1: # Tokyo
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # ap-south-1: # Mumbai
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+    # sa-east-1:  # Sao Paulo
+    #   "AMIEC2" : "ami-xxxxxxxx" 
+  InstanceSize:
+    SMALL:
+      "EC2" : "t2.micro"
+      "DB" : "db.t2.micro"
+    MEDIUM:
+      "EC2" : "t2.small"
+      "DB" : "db.t2.small"
+    LARGE:
+      "EC2" : "t2.medium"
+      "DB" : "db.r3.xlarge"
+Resources:
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Join ["", [!Ref IPv4VPCCidrBlock, ".0.0/16"]]  # Adding 3rd and 4th octect plus mask
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      Tags:
+      - Key: Name
+        Value: !Ref "AWS::StackName"
+      - Key: Env
+        Value: Testing
+  # Subnets creation
+  SubnetPublic01:           # wwww servers on AZ1     
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".0.0/28"]] # By default 10.1.0.0/28
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [Public01, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  SubnetPublic02:           # Bastion hosts on AZ1
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".0.16/28"]] # By default 10.1.0.0/28
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [Public01, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  SubnetPublic03:           # wwww servers on AZ2
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".3.0/28"]] # By default 10.1.3.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [Public02, {"Fn::Select" : [ "1", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  SubnetPublic04:           # Bastion hosts on AZ2
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".3.16/28"]] # By default 10.1.3.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [Public02, {"Fn::Select" : [ "1", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  SubnetPrivate01:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".1.0/24"]] # By default 10.1.1.0/24
+      MapPublicIpOnLaunch: false  # By default the value is false, can be omited
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [Private01, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  SubnetPrivate02:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".4.0/24"]] # By default 10.1.4.0/24
+      MapPublicIpOnLaunch: false  # By default the value is false, can be omited
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [Private02, {"Fn::Select" : [ "1", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  SubnetDB01:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".2.0/24"]] # By default 10.1.2.0/24
+      MapPublicIpOnLaunch: false  # By default the value is false, can be omited
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [DB01, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  SubnetDB02:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Join [ "", [!Ref IPv4VPCCidrBlock, ".5.0/24"]] # By default 10.1.5.0/24
+      MapPublicIpOnLaunch: false  # By default the value is false, can be omited
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [DB02, {"Fn::Select" : [ "1", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::StackName'}]]
+      - Key: Env
+        Value: Testing
+      VpcId: !Ref VPC
+  # NatGW, first public subnet (AZ1) assigment plus EIP
+  NatGW:
+    Type: "AWS::EC2::NatGateway"
+    DependsOn: IGWattachment
+    Properties:
+      AllocationId: !GetAtt ElasticIPNatGW.AllocationId
+      SubnetId: !Ref SubnetPublic01
+      Tags:
+        - Key: Name
+          Value: !Join [" - ", [NatGW, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::Region'}, {Ref: 'AWS::StackName'}]]
+  ElasticIPNatGW:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+  # IGW creation and attach to VPC
+  InternetGW:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [IGW, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::Region'}, {Ref: 'AWS::StackName'}]]
+  IGWattachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId: !Ref InternetGW
+      VpcId: !Ref VPC
+  # RTs creation and 0/0 assigment to each RT (dependencies: IGW & NatGW)
+  PublicRT:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [PublicRT, {Ref: 'AWS::StackName'}]]
+  PrivateRT:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [" - ", [PublicRT, {Ref: 'AWS::StackName'}]]
+  PublicRTDefGW:
+    Type: "AWS::EC2::Route"
+    DependsOn: IGWattachment
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0 
+      GatewayId: !Ref InternetGW
+      RouteTableId: !Ref PublicRT 
+  # Subnets association with the correct RT
+  PubSubnet01Assoc:  
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref PublicRT
+      SubnetId: !Ref SubnetPublic01
+  PubSubnet02Assoc:  
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref PublicRT
+      SubnetId: !Ref SubnetPublic02
+  PubSubnet03Assoc:  
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref PublicRT
+      SubnetId: !Ref SubnetPublic03
+  PubSubnet04Assoc:  
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref PublicRT
+      SubnetId: !Ref SubnetPublic04
+  PrivateRTDefGW:
+    Type: "AWS::EC2::Route"
+    DependsOn: NatGW
+    Properties:
+      RouteTableId: !Ref PrivateRT 
+      DestinationCidrBlock: 0.0.0.0/0 
+      NatGatewayId: !Ref NatGW
+  # EC2 instances for bastion hosts and HTTP/HTTPs servers: 
+  Bastion01:
+    Type: "AWS::EC2::Instance"
+    DeletionPolicy: Delete
+    Properties:
+      AvailabilityZone: !Select [ "0", {"Fn::GetAZs" : ""}]
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMIEC2] # Dynamic mapping + Pseudo Parameter
+      InstanceType: !FindInMap [InstanceSize, "SMALL", EC2]
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetPublic02
+      Tags:
+        - Key: Name
+          Value: !Join [" - ", [Bastion, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::Region'}, {Ref: 'AWS::StackName'}]]
+  Bastion02:
+    Type: "AWS::EC2::Instance"
+    DeletionPolicy: Delete
+    Properties:
+      AvailabilityZone: !Select [ "1", {"Fn::GetAZs" : ""}]
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMIEC2] # Dynamic mapping + Pseudo Parameter
+      InstanceType: !FindInMap [InstanceSize, "SMALL", EC2]
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetPublic04
+      Tags:
+        - Key: Name
+          Value: !Join [" - ", [Bastion, {"Fn::Select" : [ "0", {"Fn::GetAZs" : ""}]}, {Ref: 'AWS::Region'}, {Ref: 'AWS::StackName'}]]
+      
